@@ -53,12 +53,16 @@ $(document).ready(function () {
 
 function startLOG(){
     console.log("start logging");
-    logging = 1;
+	logging = 1;
+	// we add a point at 0 load
+	ratioChange(-b_calib/a_calib)
 }
 
 function stopLOG(){
-    console.log("Stop logging");
-    logging = 0;
+	console.log("Stop logging");
+	ratioChange(-b_calib/a_calib)
+	logging = 0;
+	
 }
 
 function clearLOG(){
@@ -81,9 +85,11 @@ function clearPlot(){
 
 function saveLOG(){
     var dd = new Date()
-    var fname = dd.toISOString().substr(0, 10)+"_T"+dd.toLocaleTimeString()+"_load_cell.json"
+	// var fname = dd.toISOString().substr(0, 10)+"_T"+dd.toLocaleTimeString()+"_load_cell.json"
+	var fname = dd.toISOString().substr(0, 10)+"_T"+dd.toLocaleTimeString()+"_load_cell.csv"
     console.log("Saving data into : "+fname)
-    download(data, fname, 'text/plain')
+	// download(data, fname, 'text/plain')
+	downloadCSV(data,fname)
 }
 
 
@@ -104,10 +110,14 @@ function onAttach(ch) {
 	phid.onError = onError;
 	phid.onPropertyChange = propChange;
 
-	$('#di').val(phid.getDataInterval());
+	
+	// we are forcing the initialization of the DataInterval to 512
+	// $('#di').val(phid.getDataInterval());
+	$('#di').val(+1000);
 	$('#ct').val(phid.getVoltageRatioChangeTrigger());
 
 	switch(phid.getDeviceID()){
+		
 	    case phidget22.DeviceID.PN_1046:
 			phid.setBridgeGain($('#gainCombo').val());
 			$('#sensorLabel').hide();
@@ -116,6 +126,8 @@ function onAttach(ch) {
 			$('#unit').hide();
 			$("#gainCombo option[value='2']").remove();
 			$("#gainCombo option[value='3']").remove();
+			// Adding some settings for the load cell device
+			$("#gainCombo option[value='1']").remove();
 			break;
 	    case phidget22.DeviceID.PN_DAQ1500:
 	        $('#gainCombo').val(phid.getBridgeGain());
@@ -141,6 +153,7 @@ function onAttach(ch) {
 			$('#enableLabel').hide();
 			$('#enableBox').hide();
 			break;
+
 	}
 
 	$('#ratioField').show();
@@ -169,12 +182,19 @@ function propChange(prop) {
 function ratioChange(ratio) {
     let load = (ratio*a_calib+b_calib)/1000
     if (logging == 1) {
-        // console.log(ratio, new Date().getTime())        
-        data.push({"value": ratio,
-                   "timeStamp":  new Date().getTime(),
-                "load_kg": +load.toPrecision(4)})
+		// console.log(ratio, new Date().getTime())		
+		current_time =  new Date().getTime()
+		if (data.length === 0){
+			tstep = 0
+		} else{
+			tstep = (current_time - data[0].timeStamp)/1000
+		}
+		data.push({"voltageRatio": ratio,
+					"timeStamp": current_time,
+				   "timeStep": tstep,				   
+                	"load_kg": +load.toPrecision(4)})
 
-        var trace2 = { x: data.map(d => (d.timeStamp - data[0].timeStamp)/1000),
+        var trace2 = { x: data.map(d => d.timeStep),
                        y: data.map(d => d.load_kg ),
                         }                    
         // Plotly.react("plot", [trace2], {})
@@ -187,6 +207,39 @@ function ratioChange(ratio) {
     $('#VoltageRatio').val(ratio);
     $('#LoadValue').val(load.toPrecision(4));
     
+}
+
+function convertArrayOfObjectsToCSV(data){ //args) {  
+	var result, ctr, keys, columnDelimiter, lineDelimiter //, data;
+
+	// data = args.data || null;
+	if (data == null || !data.length) {
+		return null;
+	}
+
+	// columnDelimiter = args.columnDelimiter || ',';
+	// lineDelimiter = args.lineDelimiter || '\n';
+	columnDelimiter = ', ';
+	lineDelimiter = '\n';
+
+	keys = Object.keys(data[0]);
+
+	result = '';
+	result += keys.join(columnDelimiter);
+	result += lineDelimiter;
+
+	data.forEach(function(item) {
+		ctr = 0;
+		keys.forEach(function(key) {
+			if (ctr > 0) result += columnDelimiter;
+
+			result += item[key];
+			ctr++;
+		});
+		result += lineDelimiter;
+	});
+
+	return result;
 }
 
 
@@ -213,6 +266,24 @@ function download(data, filename, type) {
     }
 }
 
+function downloadCSV(data, filename) {  
+	// var data, filename, link;
+	var link;
+	var csv = convertArrayOfObjectsToCSV(data);
+	if (csv == null) return;
+
+	// filename = args.filename || 'export.csv';
+
+	if (!csv.match(/^data:text\/csv/i)) {
+		csv = 'data:text/csv;charset=utf-8,' + csv;
+	}
+	data = encodeURI(csv);
+
+	link = document.createElement('a');
+	link.setAttribute('href', data);
+	link.setAttribute('download', filename);
+	link.click();
+}
 
 function svChange(sensorValue, sensorUnit) {
     console.log("svChange")
